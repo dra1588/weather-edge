@@ -1,0 +1,55 @@
+name: Asia Edge Monitor
+
+on:
+  schedule:
+    # Hourly snapshot — builds the price history that makes move-detection possible
+    - cron: '0 * * * *'
+    # Morning brief at 8am Melbourne (21:00 UTC prev day, AEDT = UTC+11)
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'run | brief | tally'
+        required: false
+        default: 'run'
+
+permissions:
+  contents: write
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.4.0
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run monitor
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID:   ${{ secrets.CHAT_ID }}
+        run: |
+          if [ "${{ github.event.schedule }}" = "0 21 * * *" ]; then
+            python asia_edge.py --brief
+          elif [ "${{ github.event.inputs.mode }}" = "brief" ]; then
+            python asia_edge.py --brief
+          elif [ "${{ github.event.inputs.mode }}" = "tally" ]; then
+            python asia_edge.py --tally
+          else
+            python asia_edge.py
+          fi
+
+      - name: Commit state
+        if: always()
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add price_history.json paper_trades.json feed_health.json || true
+          git diff --cached --quiet || git commit -m "asia_edge state [skip ci]"
+          git pull --rebase --autostash || true
+          git push || true

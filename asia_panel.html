@@ -1,0 +1,230 @@
+<!-- ═══════════════════════════════════════════════════════════════════════
+     ASIA EDGE PANEL — drop-in for Trading OPS Centre (dashboard.html)
+
+     1. Paste the <style> block into your existing <style> tag (or leave as-is)
+     2. Paste the <section> where you want the panel to appear
+     3. Paste the <script> before </body>
+     4. Set ASIA_FEED_URL below to wherever asia_edge.json is served
+
+     Inherits your existing CSS variables (--bg, --surface, --green, etc).
+     If a variable is missing it falls back to a sane value.
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<style>
+/* ── Asia Edge panel ── */
+.ae-panel{
+  background:var(--surface,#111318);
+  border:1px solid var(--border,#1e2330);
+  border-radius:8px;
+  overflow:hidden;
+  margin-bottom:20px;
+}
+.ae-head{
+  display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+  padding:14px 18px;
+  border-bottom:1px solid var(--border,#1e2330);
+}
+.ae-title{
+  font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--text,#e2e8f0);
+}
+.ae-title em{color:var(--purple,#a78bfa);font-style:normal}
+.ae-stamp{
+  font-family:'IBM Plex Mono',monospace;font-size:11px;
+  color:var(--sub,#8892a4);margin-left:auto;
+}
+.ae-feeds{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted,#4a5568)}
+.ae-feeds b{color:var(--green,#00d084);font-weight:500}
+.ae-feeds .down{color:var(--red,#ff4757)}
+
+/* The split is the whole point: two columns, weighted */
+.ae-body{display:grid;grid-template-columns:1.35fr 1fr;gap:0}
+@media(max-width:840px){.ae-body{grid-template-columns:1fr}}
+.ae-col{padding:14px 18px}
+.ae-col+.ae-col{border-left:1px solid var(--border,#1e2330)}
+@media(max-width:840px){.ae-col+.ae-col{border-left:0;border-top:1px solid var(--border,#1e2330)}}
+
+.ae-lbl{
+  font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
+  letter-spacing:.14em;text-transform:uppercase;margin-bottom:3px;
+}
+.ae-lbl.live{color:var(--green,#00d084)}
+.ae-lbl.late{color:var(--muted,#4a5568)}
+.ae-sub{font-size:11px;color:var(--sub,#8892a4);margin-bottom:12px;line-height:1.4}
+
+.ae-row{
+  padding:10px 0;border-bottom:1px solid var(--dim,#2a3040);
+}
+.ae-row:last-child{border-bottom:0}
+.ae-q{font-size:13px;line-height:1.35;margin-bottom:5px;color:var(--text,#e2e8f0)}
+.ae-q a{color:inherit;text-decoration:none;border-bottom:1px solid transparent}
+.ae-q a:hover{border-bottom-color:var(--sub,#8892a4)}
+.ae-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  font-family:'IBM Plex Mono',monospace;font-size:11px}
+.ae-px{color:var(--text,#e2e8f0);font-weight:500}
+.ae-flat{color:var(--green,#00d084)}
+.ae-up{color:var(--green,#00d084)}
+.ae-dn{color:var(--red,#ff4757)}
+.ae-tag{
+  font-size:9px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--sub,#8892a4);background:var(--dim,#2a3040);
+  padding:1px 6px;border-radius:3px;
+}
+.ae-hl{font-size:11px;color:var(--sub,#8892a4);margin-top:5px;line-height:1.45;padding-left:10px;
+  border-left:2px solid var(--dim,#2a3040)}
+.ae-hl span{color:var(--muted,#4a5568);font-family:'IBM Plex Mono',monospace;font-size:9px}
+
+.ae-empty{font-size:12px;color:var(--muted,#4a5568);padding:14px 0;line-height:1.5}
+
+/* Tally strip */
+.ae-tally{
+  display:flex;gap:22px;flex-wrap:wrap;align-items:baseline;
+  padding:12px 18px;border-top:1px solid var(--border,#1e2330);
+  background:rgba(0,0,0,.2);
+}
+.ae-stat{display:flex;flex-direction:column;gap:2px}
+.ae-stat .v{font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;color:var(--text,#e2e8f0)}
+.ae-stat .v.pos{color:var(--green,#00d084)}
+.ae-stat .v.neg{color:var(--red,#ff4757)}
+.ae-stat .k{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted,#4a5568)}
+.ae-prog{flex:1;min-width:120px;display:flex;flex-direction:column;gap:4px;justify-content:center}
+.ae-bar{height:3px;background:var(--dim,#2a3040);border-radius:2px;overflow:hidden}
+.ae-bar i{display:block;height:100%;background:var(--purple,#a78bfa)}
+.ae-verdict{font-size:11px;color:var(--amber,#ffa502);padding:0 18px 12px}
+</style>
+
+
+<!-- ── Panel markup ── -->
+<section class="ae-panel" id="asia-edge-panel">
+  <div class="ae-head">
+    <span class="ae-title">Asia Edge · <em>Melbourne Window</em></span>
+    <span class="ae-feeds" id="ae-feeds"></span>
+    <span class="ae-stamp" id="ae-stamp">loading…</span>
+  </div>
+  <div class="ae-body">
+    <div class="ae-col">
+      <div class="ae-lbl live">Unpriced</div>
+      <div class="ae-sub">News broke. Market hasn't moved. Read the resolution rules before acting.</div>
+      <div id="ae-unpriced"></div>
+    </div>
+    <div class="ae-col">
+      <div class="ae-lbl late">Already repriced</div>
+      <div class="ae-sub">The market knows. Informational only.</div>
+      <div id="ae-repriced"></div>
+    </div>
+  </div>
+  <div class="ae-tally" id="ae-tally"></div>
+  <div class="ae-verdict" id="ae-verdict"></div>
+</section>
+
+
+<script>
+/* ═══ Asia Edge panel renderer ═══
+   Set this to wherever asia_edge.json is reachable from the browser.
+   See the deployment notes — a private repo needs one of the three options. */
+const ASIA_FEED_URL = "asia_edge.json";
+
+(function () {
+  const $ = id => document.getElementById(id);
+  const esc = s => (s || "").replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  function marketRow(m, mode) {
+    const link = m.slug
+      ? `<a href="https://polymarket.com/event/${esc(m.slug)}" target="_blank" rel="noopener">${esc(m.question)}</a>`
+      : esc(m.question);
+
+    let move;
+    if (mode === "unpriced") {
+      move = `<span class="ae-flat">flat ${m.delta >= 0 ? "+" : ""}${m.delta.toFixed(1)}pts</span>`;
+    } else {
+      const cls = m.delta > 0 ? "ae-up" : "ae-dn";
+      const arrow = m.delta > 0 ? "▲" : "▼";
+      move = `<span class="${cls}">${arrow} ${m.delta >= 0 ? "+" : ""}${m.delta.toFixed(1)}pts</span>`;
+    }
+
+    const tags = (m.themes || []).slice(0, 2)
+      .map(t => `<span class="ae-tag">${esc(t.replace(/_/g, " "))}</span>`).join("");
+
+    const heads = mode === "unpriced"
+      ? (m.headlines || []).slice(0, 2).map(h =>
+          `<div class="ae-hl">${esc(h.title)} <span>${esc(h.source)}</span></div>`).join("")
+      : "";
+
+    return `<div class="ae-row">
+      <div class="ae-q">${link}</div>
+      <div class="ae-meta">
+        <span class="ae-px">${m.price.toFixed(0)}¢</span>
+        ${move}
+        ${mode === "unpriced" ? `<span class="ae-tag">${m.n_headlines} headline${m.n_headlines === 1 ? "" : "s"}</span>` : ""}
+        ${tags}
+      </div>${heads}</div>`;
+  }
+
+  function render(d) {
+    $("ae-stamp").textContent = d.generated_melb + " AEDT";
+
+    const live = (d.feeds && d.feeds.live) || [];
+    const down = (d.feeds && d.feeds.down) || [];
+    $("ae-feeds").innerHTML =
+      `<b>${live.length}</b> feeds live` +
+      (down.length ? ` · <span class="down">${down.length} down: ${down.map(esc).join(", ")}</span>` : "");
+
+    $("ae-unpriced").innerHTML = (d.unpriced || []).length
+      ? d.unpriced.map(m => marketRow(m, "unpriced")).join("")
+      : `<div class="ae-empty">Nothing unpriced right now. Most days look like this — the window is narrow by nature.</div>`;
+
+    $("ae-repriced").innerHTML = (d.repriced || []).length
+      ? d.repriced.map(m => marketRow(m, "repriced")).join("")
+      : `<div class="ae-empty">No sharp moves in the last 12 hours.</div>`;
+
+    // Tally
+    const t = d.tally || {};
+    const days = t.elapsed_days ?? 0, total = t.period_days || d.period_days || 14;
+    const pct = Math.min(100, (days / total) * 100);
+    const sign = v => (v > 0 ? "pos" : v < 0 ? "neg" : "");
+
+    if (t.total) {
+      $("ae-tally").innerHTML = `
+        <div class="ae-stat"><span class="v">${t.total}</span><span class="k">Trades</span></div>
+        <div class="ae-stat"><span class="v">${t.win_rate.toFixed(0)}%</span><span class="k">Win rate</span></div>
+        <div class="ae-stat"><span class="v ${sign(t.avg_pnl_pct)}">${t.avg_pnl_pct >= 0 ? "+" : ""}${t.avg_pnl_pct.toFixed(1)}%</span><span class="k">Avg P&amp;L</span></div>
+        <div class="ae-stat"><span class="v">${t.open ?? 0}</span><span class="k">Open</span></div>
+        <div class="ae-prog">
+          <div class="ae-bar"><i style="width:${pct}%"></i></div>
+          <span class="k" style="font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted,#4a5568)">Paper day ${days}/${total}</span>
+        </div>`;
+    } else {
+      $("ae-tally").innerHTML = `
+        <div class="ae-stat"><span class="v">0</span><span class="k">Trades logged</span></div>
+        <div class="ae-prog">
+          <div class="ae-bar"><i style="width:${pct}%"></i></div>
+          <span class="k" style="font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted,#4a5568)">Paper day ${days}/${total} — log a call to start scoring</span>
+        </div>`;
+    }
+
+    // Verdict only at period end
+    const v = $("ae-verdict");
+    if (t.remaining_days === 0 && t.total !== undefined) {
+      v.textContent = t.total < 10
+        ? `Period complete — ${t.total} trades is too few to conclude anything. Extend or accept the result is unproven.`
+        : (t.win_rate > 55 && t.avg_pnl_pct > 0)
+          ? "Period complete — edge looks real. Consider small live size."
+          : "Period complete — no demonstrated edge. Do not go live.";
+    } else { v.textContent = ""; }
+  }
+
+  // Baked-in data (standalone page) wins; otherwise fetch.
+  if (typeof ASIA_DATA !== "undefined") { render(ASIA_DATA); return; }
+
+  fetch(ASIA_FEED_URL, { cache: "no-store" })
+    .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(render)
+    .catch(e => {
+      $("ae-stamp").textContent = "unavailable";
+      $("ae-unpriced").innerHTML =
+        `<div class="ae-empty">Can't reach <code>${esc(ASIA_FEED_URL)}</code> — ${esc(e.message)}.<br>
+         Check ASIA_FEED_URL in the panel script.</div>`;
+    });
+})();
+</script>
