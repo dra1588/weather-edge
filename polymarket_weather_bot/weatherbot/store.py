@@ -52,3 +52,17 @@ class Store:
             datetime.now(timezone.utc).isoformat(), external_order_id,
         ))
         self.conn.commit()
+
+    def dashboard(self, limit: int = 100) -> dict:
+        signals = [dict(row) for row in self.conn.execute(
+            "SELECT * FROM signals ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()]
+        trades = [dict(row) for row in self.conn.execute(
+            "SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()]
+        return {
+            "signals": signals,
+            "trades": trades,
+            "open_positions": self.open_count(),
+            "risk_today": self.risk_today(),
+        }
