@@ -4,13 +4,14 @@ from collections import defaultdict
 from .config import Settings
 from .execution import live_buy_yes
 from .forecast import fetch_forecast
-from .markets import fetch_weather_markets
+from .markets import fetch_market_price, fetch_weather_markets
 from .models import Signal
 from .store import Store
 from .strategy import build_signal
 
 
 async def scan(settings: Settings, store: Store, confirm_live: bool = False) -> list[Signal]:
+    await reconcile_trades(store)
     markets = await fetch_weather_markets(settings.city_keys)
     keys = sorted({(m.city_key, m.target_date, m.metric) for m in markets}, key=str)
     fetched = await asyncio.gather(*(fetch_forecast(*key) for key in keys), return_exceptions=True)
@@ -48,6 +49,21 @@ async def scan(settings: Settings, store: Store, confirm_live: bool = False) -> 
         else:
             store.record_trade(signal, "paper")
     return signals
+
+
+async def reconcile_trades(store: Store):
+    trades = store.open_trades()
+    if not trades:
+        return
+    quotes = await asyncio.gather(*(
+        fetch_market_price(trade["market_id"], trade["token_id"]) for trade in trades
+    ), return_exceptions=True)
+    for trade, quote in zip(trades, quotes):
+        if isinstance(quote, Exception):
+            print(f"MARK FAILED {trade['market_id']}: {quote}")
+            continue
+        price, settled = quote
+        store.mark_trade(trade["id"], price, settled)
 
 
 async def run_forever(settings: Settings, store: Store, confirm_live: bool = False):

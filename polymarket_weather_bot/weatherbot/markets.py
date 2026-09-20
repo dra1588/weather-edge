@@ -8,6 +8,7 @@ from .models import Metric, TemperatureBucket, WeatherMarket
 
 GAMMA_URL = "https://gamma-api.polymarket.com/events"
 SEARCH_URL = "https://gamma-api.polymarket.com/public-search"
+MARKETS_URL = "https://gamma-api.polymarket.com/markets"
 
 CITY_ALIASES = {
     "new york city": "nyc", "new york": "nyc", "nyc": "nyc",
@@ -130,3 +131,18 @@ async def fetch_weather_markets(city_keys: list[str]) -> list[WeatherMarket]:
                     if market and market.market_id:
                         results[market.market_id] = market
     return list(results.values())
+
+
+async def fetch_market_price(market_id: str, token_id: str) -> tuple[float, bool]:
+    async with httpx.AsyncClient(timeout=20, headers={"User-Agent": "weatherbot/0.1"}) as client:
+        response = await client.get(MARKETS_URL, params={"condition_ids": market_id})
+        response.raise_for_status()
+    markets = response.json()
+    if not markets:
+        raise RuntimeError(f"market not found: {market_id}")
+    market = markets[0]
+    tokens = [str(value) for value in _json_list(market.get("clobTokenIds"))]
+    prices = [float(value) for value in _json_list(market.get("outcomePrices"))]
+    if token_id not in tokens or len(tokens) != len(prices):
+        raise RuntimeError(f"token price unavailable: {token_id}")
+    return prices[tokens.index(token_id)], bool(market.get("closed"))

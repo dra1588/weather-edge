@@ -22,6 +22,22 @@ class Store:
           status TEXT NOT NULL DEFAULT 'open', external_order_id TEXT
         );
         """)
+        self._migrate_trades()
+
+    def _migrate_trades(self):
+        columns = {row[1] for row in self.conn.execute("PRAGMA table_info(trades)")}
+        additions = {
+            "current_price": "REAL",
+            "exit_price": "REAL",
+            "pnl": "REAL NOT NULL DEFAULT 0",
+            "result": "TEXT",
+            "updated_at": "TEXT",
+            "settled_at": "TEXT",
+        }
+        for name, definition in additions.items():
+            if name not in columns:
+                self.conn.execute(f"ALTER TABLE trades ADD COLUMN {name} {definition}")
+        self.conn.commit()
 
     def log_signal(self, signal: Signal):
         self.conn.execute("INSERT INTO signals VALUES(NULL,?,?,?,?,?,?,?,?,?)", (
@@ -46,11 +62,44 @@ class Store:
         return float(self.conn.execute(sql, args).fetchone()[0])
 
     def record_trade(self, signal: Signal, mode: str, external_order_id: str | None = None):
-        self.conn.execute("INSERT INTO trades VALUES(NULL,?,?,?,?,?,?,?,?, 'open', ?)", (
+        now = datetime.now(timezone.utc).isoformat()
+        self.conn.execute("""
+            INSERT INTO trades (
+              market_id, token_id, city, target_date, mode, entry_price, size_usd,
+              created_at, status, external_order_id, current_price, pnl, updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,'open',?,?,0,?)
+        """, (
             signal.market.market_id, signal.token_id, signal.market.city_key,
             signal.market.target_date.isoformat(), mode, signal.entry_price, signal.size_usd,
-            datetime.now(timezone.utc).isoformat(), external_order_id,
+            now, external_order_id, signal.entry_price, now,
         ))
+        self.conn.commit()
+
+    def open_trades(self) -> list[dict]:
+        return [dict(row) for row in self.conn.execute(
+            "SELECT * FROM trades WHERE status='open' ORDER BY id"
+        ).fetchall()]
+
+    def mark_trade(self, trade_id: int, current_price: float, settled: bool = False):
+        row = self.conn.execute(
+            "SELECT entry_price, size_usd FROM trades WHERE id=?", (trade_id,)
+        ).fetchone()
+        if not row:
+            return
+        shares = float(row["size_usd"]) / float(row["entry_price"])
+        pnl = round((current_price - float(row["entry_price"])) * shares, 4)
+        now = datetime.now(timezone.utc).isoformat()
+        if settled:
+            result = "win" if pnl > 0.005 else "loss" if pnl < -0.005 else "breakeven"
+            self.conn.execute("""
+                UPDATE trades SET current_price=?, exit_price=?, pnl=?, result=?,
+                  status='settled', updated_at=?, settled_at=? WHERE id=?
+            """, (current_price, current_price, pnl, result, now, now, trade_id))
+        else:
+            self.conn.execute(
+                "UPDATE trades SET current_price=?, pnl=?, updated_at=? WHERE id=?",
+                (current_price, pnl, now, trade_id),
+            )
         self.conn.commit()
 
     def dashboard(self, limit: int = 100) -> dict:
@@ -60,9 +109,24 @@ class Store:
         trades = [dict(row) for row in self.conn.execute(
             "SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()]
+        totals = self.conn.execute("""
+            SELECT
+              COALESCE(SUM(CASE WHEN status='settled' THEN pnl ELSE 0 END),0) realized,
+              COALESCE(SUM(CASE WHEN status='open' THEN pnl ELSE 0 END),0) unrealized,
+              SUM(CASE WHEN result='win' THEN 1 ELSE 0 END) wins,
+              SUM(CASE WHEN result='loss' THEN 1 ELSE 0 END) losses
+            FROM trades
+        """).fetchone()
+        realized = float(totals["realized"])
+        unrealized = float(totals["unrealized"])
         return {
             "signals": signals,
             "trades": trades,
             "open_positions": self.open_count(),
             "risk_today": self.risk_today(),
+            "realized_pnl": realized,
+            "unrealized_pnl": unrealized,
+            "total_pnl": realized + unrealized,
+            "wins": int(totals["wins"] or 0),
+            "losses": int(totals["losses"] or 0),
         }
