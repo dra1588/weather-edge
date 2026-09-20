@@ -7,7 +7,7 @@ from .models import Signal
 
 class Store:
     def __init__(self, path: Path):
-        self.conn = sqlite3.connect(path)
+        self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript("""
         CREATE TABLE IF NOT EXISTS signals (
