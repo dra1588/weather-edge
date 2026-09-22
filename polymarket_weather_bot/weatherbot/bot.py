@@ -63,7 +63,7 @@ async def reconcile_trades(store: Store):
             print(f"MARK FAILED {trade['market_id']}: {quote}")
             continue
         price, settled = quote
-        store.mark_trade(trade["id"], price, settled)
+        store.mark_trade(trade["id"], price, settled, apply_stops=trade["mode"] == "paper")
 
 
 async def run_forever(settings: Settings, store: Store, confirm_live: bool = False):
