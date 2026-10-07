@@ -37,6 +37,30 @@ def dashboard():
     return {**store.dashboard(), "mode": settings.mode, "updated_at": datetime.now(timezone.utc).isoformat()}
 
 
+@app.get("/api/portfolio")
+def portfolio():
+    d = store.dashboard()
+    start = float(settings.paper_bankroll_usd)
+    realized = float(d.get("realized_pnl") or 0)
+    unrealized = float(d.get("unrealized_pnl") or 0)
+    equity = start + realized + unrealized
+    return {
+        "service": "polymarket_weather",
+        "mode": settings.mode,
+        "paper_mock": settings.mode == "paper",
+        "live_money": settings.mode == "live",
+        "start_balance": start,
+        "equity": round(equity, 2),
+        "realized_pnl": round(realized, 2),
+        "unrealized_pnl": round(unrealized, 2),
+        "return_pct": round((equity / start - 1) * 100, 2) if start else None,
+        "open_positions": d.get("open_positions"),
+        "exposure": d.get("risk_today"),
+        "drawdown": None,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def home():
     return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Polymarket Weather Bot</title><style>body{font:14px system-ui;background:#08101d;color:#e8eef8;margin:0;padding:24px}.wrap{max-width:1200px;margin:auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:20px 0}.card{background:#111b2d;border:1px solid #24324a;border-radius:12px;padding:16px}.k{color:#94a3b8;font-size:12px}.v{font-size:22px;font-weight:700;margin-top:6px}pre{background:#111b2d;padding:16px;border-radius:12px;white-space:pre-wrap;font-size:11px}</style></head><body><div class="wrap"><h1>🌦️ Polymarket Weather Bot</h1><p>Readable view of the existing weather-market research feed.</p><div class="grid"><div class="card"><div class="k">Status</div><div class="v" id="status">Loading…</div></div><div class="card"><div class="k">Mode</div><div class="v" id="mode">—</div></div><div class="card"><div class="k">Open positions</div><div class="v" id="positions">—</div></div><div class="card"><div class="k">Opportunities</div><div class="v" id="opps">—</div></div></div><h2>Dashboard data</h2><pre id="data">Loading…</pre></div><script>async function go(){try{let d=await(await fetch('/api/dashboard')).json();status.textContent='Running';mode.textContent=d.mode||'—';let p=d.open_positions||d.positions||[];let o=d.opportunities||d.markets||d.candidates||[];positions.textContent=Array.isArray(p)?p.length:(p??'—');opps.textContent=Array.isArray(o)?o.length:(o??'—');data.textContent=JSON.stringify(d,null,2)}catch(e){status.textContent='Unavailable'}}go();setInterval(go,10000)</script></body></html>"""
