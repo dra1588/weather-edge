@@ -16,6 +16,9 @@ async def scan(settings: Settings, store: Store, confirm_live: bool = False) -> 
     keys = sorted({(m.city_key, m.target_date, m.metric) for m in markets}, key=str)
     fetched = await asyncio.gather(*(fetch_forecast(*key) for key in keys), return_exceptions=True)
     forecasts = {key: value for key, value in zip(keys, fetched) if not isinstance(value, Exception)}
+    for key, value in zip(keys, fetched):
+        if isinstance(value, Exception):
+            print(f"FORECAST FAILED {key}: {type(value).__name__}: {value}")
     signals = []
     for market in markets:
         key = (market.city_key, market.target_date, market.metric)
