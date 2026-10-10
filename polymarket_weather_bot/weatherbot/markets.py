@@ -137,10 +137,15 @@ async def fetch_market_price(market_id: str, token_id: str) -> tuple[float, bool
     async with httpx.AsyncClient(timeout=20, headers={"User-Agent": "weatherbot/0.1"}) as client:
         response = await client.get(MARKETS_URL, params={"condition_ids": market_id})
         response.raise_for_status()
-    markets = response.json()
-    if not markets:
-        raise RuntimeError(f"market not found: {market_id}")
-    market = markets[0]
+        markets = response.json()
+        market = next((m for m in markets if str(m.get("conditionId")) == str(market_id)), None)
+        if market is None:
+            fallback = await client.get(MARKETS_URL, params={"clob_token_ids": token_id})
+            fallback.raise_for_status()
+            market = next((m for m in fallback.json()
+                           if str(token_id) in [str(t) for t in _json_list(m.get("clobTokenIds"))]), None)
+        if market is None:
+            raise RuntimeError(f"market not found by condition or token: {market_id}")
     tokens = [str(value) for value in _json_list(market.get("clobTokenIds"))]
     prices = [float(value) for value in _json_list(market.get("outcomePrices"))]
     if token_id not in tokens or len(tokens) != len(prices):
